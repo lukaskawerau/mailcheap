@@ -111,7 +111,7 @@ export async function sendTestCampaign(id) {
 	return result;
 }
 
-// Sending a scheduled campaign now replaces its schedule; the job left in QStash then does nothing.
+// Sending a scheduled campaign now replaces its schedule; the old durable job then does nothing.
 export async function sendCampaign(id, { audienceLimit } = {}) {
 	const campaign = await findCampaign(id);
 	if (!campaign) return { error: "Campaign not found" };

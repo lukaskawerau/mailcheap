@@ -11,6 +11,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker": "node --env-file-if-exists=.env.local scripts/mail-worker.mjs",
     "lint": "eslint",
     "test": "node --test \"tests/*.test.mjs\""
   },
@@ -24,7 +25,6 @@
     "@tiptap/react": "^3.31.4",
     "@tiptap/starter-kit": "^3.31.4",
     "@tiptap/suggestion": "^3.31.4",
-    "@upstash/qstash": "^2.12.0",
     "@upstash/ratelimit": "^2.2.0",
     "@upstash/redis": "^1.39.0",
     "@vercel/blob": "^2.8.0",

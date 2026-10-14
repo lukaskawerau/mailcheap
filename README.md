@@ -4,7 +4,9 @@ Mailcheap is a self-hosted newsletter app on Amazon SES. Write an issue, send it
 
 ![Mailcheap overview](docs/screenshots/overview.webp)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmarclou%2Fmailcheap&project-name=mailcheap&repository-name=mailcheap&env=MONGODB_URI,ADMIN_EMAIL,ADMIN_PASSWORD,SESSION_SECRET&envDescription=Database%2C%20login%20and%20signing%20secret.%20ADMIN_PASSWORD%20needs%2012%2B%20characters%2C%20SESSION_SECRET%2032%2B%20%28run%3A%20openssl%20rand%20-base64%2048%29.%20Add%20SES%20and%20QStash%20after%20the%20first%20deploy.&envLink=https%3A%2F%2Fgithub.com%2Fmarclou%2Fmailcheap%23environment-variables)
+This is the Ortskurier fork of [Marc Lou's Mailcheap](https://github.com/marclou/mailcheap). Campaign
+delivery and scheduling run in a [self-hosted MongoDB worker](docs/delivery-worker.md). Deploy the web
+process and persistent worker together on a Node.js host; this fork has no QStash dependency.
 
 > [!IMPORTANT]
 > **No support.** This is a one-time open-source release. Issues are off, and setup questions go unanswered. Fork it, deploy it, make it yours.
@@ -21,7 +23,7 @@ Mailcheap is the rest of what a newsletter needs, in one small Next.js app: an e
 
 - Editor with a live email preview, slash commands, image uploads and boxes. Markdown and raw HTML work too.
 - Checks before every send: subject, preview text, unsubscribe link, size under Gmail's 100 KB clip, postal address, verified domain.
-- Test emails, scheduling, and sending in batches through QStash at the rate you set.
+- Test emails, scheduling, and sending in batches through a persistent local worker at the rate you set.
 - Send in steps: start with your most engaged readers, then send to more.
 
 **Grow the list**
@@ -70,8 +72,8 @@ All names and addresses in the screenshots are made up.
 | --- | --- | --- |
 | [MongoDB](https://www.mongodb.com/atlas) | Contacts, campaigns, stats | Free tier works |
 | [Amazon SES](https://aws.amazon.com/ses/) | Sending | About $0.10 per 1,000 emails |
-| [Upstash QStash](https://upstash.com/docs/qstash) | Background sending and scheduling | Free tier to start, then pay per message. One message sends 50 emails. |
-| [Vercel](https://vercel.com) or any Node.js host | Hosting | Free tier works |
+| Node.js worker on the same host | Durable background sending and scheduling in MongoDB | Uses your existing server |
+| Node.js host | Web process and worker hosting | Depends on your server |
 | [Upstash Redis](https://upstash.com/docs/redis) (optional) | Rate limits shared by every server instance | Free tier |
 | [Vercel Blob](https://vercel.com/docs/vercel-blob) (optional) | Image uploads in the editor | Free tier |
 
@@ -85,20 +87,19 @@ Plan for about an hour, most of it waiting for DNS and for AWS to approve produc
 
 ### 1. Database
 
-1. Create a free cluster on [MongoDB Atlas](https://www.mongodb.com/atlas).
-2. **Database Access**: add a user with a password and the "Read and write to any database" role.
-3. **Network Access**: allow `0.0.0.0/0`. Vercel doesn't have fixed IP addresses.
-4. **Connect > Drivers**: copy the connection string and add a database name before the `?`, like `...mongodb.net/mailcheap?retryWrites=true`. That's your `MONGODB_URI`.
+Use a private MongoDB instance or a cluster on [MongoDB Atlas](https://www.mongodb.com/atlas). Create
+a database and a read/write user scoped to that database. Set `MONGODB_URI` with its database name
+and credentials, and permit only your application hosts to connect. Do not publish database ports.
 
 ### 2. Deploy
 
-1. Click **Deploy** above.
-2. Fill in `MONGODB_URI`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (at least 12 characters) and `SESSION_SECRET` (at least 32; generate it with `openssl rand -base64 48`). With shorter ones, Mailcheap refuses to start and the logs say which one to fix.
-3. Open `https://<your-project>.vercel.app/login` and log in.
+1. Set `MONGODB_URI`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` (at least 12 characters) and `SESSION_SECRET` (at least 32; generate it with `openssl rand -base64 48`). Keep credentials in a private environment file. Short credentials prevent startup.
+2. Run `npm ci`, `npm run build` and `npm start` behind an HTTPS reverse proxy.
+3. Open your app's `/login` and log in.
 
 Sending is off until you finish the next steps, so nothing can go out by mistake. On any other Node.js host: `npm ci && npm run build && npm start`, with the same variables, behind HTTPS.
 
-If you plan to use your own domain for the dashboard (like `mailcheap.example.com`), add it in Vercel now and set `APP_URL` to it. Links in your emails use `APP_URL`, so it should be final before your first send.
+Set `APP_URL` to the final public domain (like `https://mailcheap.example.com`) before your first send. Links in emails use this URL. Preserve `SESSION_SECRET` after sending; rotating it breaks existing confirmation and unsubscribe links.
 
 ### 3. Amazon SES
 
@@ -134,22 +135,23 @@ Use one AWS region for everything below (the examples use `us-east-1`).
 }
 ```
 
-9. **Add the variables in Vercel** and redeploy: `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET` and `SES_SNS_TOPIC_ARN`.
+9. **Add the variables to the web process environment** and recreate it: `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET` and `SES_SNS_TOPIC_ARN`.
 10. **Subscribe Mailcheap to the topic.** In the SNS topic, **Create subscription** with protocol HTTPS and endpoint `https://<your-app>/api/webhooks/ses`. Leave raw message delivery off. Mailcheap confirms the subscription by itself; refresh and the status turns to Confirmed.
 
 The **Domains** page in Mailcheap now shows your domain with its DKIM and MAIL FROM status. Optional: in SES **Account dashboard > Suppression list**, turn on the account-level list for bounces and complaints too.
 
-### 4. QStash
+### 4. Delivery worker
 
-1. In the [Upstash console](https://console.upstash.com/qstash), open QStash and copy `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY` and `QSTASH_NEXT_SIGNING_KEY` (and `QSTASH_URL` if you picked a region other than the default).
-2. Add them in Vercel and redeploy.
+1. Generate `JOB_WORKER_SECRET` with `openssl rand -hex 32`. Set the same value on web and worker, separately from the permanent `SESSION_SECRET`.
+2. Give the worker `MONGODB_URI`, `JOB_WORKER_SECRET`, `JOB_APP_URL=http://127.0.0.1:3000` (or the private Docker web origin) and `SENDING_ENABLED=false`. It needs no SES or administrator credentials.
+3. Run `npm run worker` as a supervised persistent process, alongside the web app. Check `node scripts/mail-worker.mjs status` and its health command before enabling sending.
 
-QStash calls `APP_URL/api/jobs/...` to send each batch, so the app has to be reachable on the internet. Mailcheap checks QStash's signature on every job.
+The worker calls fixed internal job routes using signed, currently leased jobs. See [worker operations](docs/delivery-worker.md) for retries, scheduling, crash recovery and delivery limits. No public job callback or external queue account is required.
 
 ### 5. Turn sending on
 
 1. In Mailcheap, create a newsletter. The from address must be on your verified domain, and the postal address shows in every email's footer (anti-spam laws require one).
-2. Set `SENDING_ENABLED=true` in Vercel and redeploy.
+2. After your consent, suppression and delivery checks pass, set `SENDING_ENABLED=true` on both web and worker and recreate them.
 3. Write a campaign, send yourself a test, then send. For a new domain, set a limit to reach your most engaged readers first, and use **Send to more** on the report once the first step looks healthy.
 
 ### Optional
@@ -173,7 +175,7 @@ npm run dev
 A local MongoDB works: `docker run -d -p 27017:27017 mongo` and `MONGODB_URI=mongodb://127.0.0.1:27017/mailcheap`.
 
 - Sending stays off locally unless you set `SENDING_ENABLED=true`. When the SES keys are empty, the AWS SDK falls back to your default AWS credentials (`~/.aws`), so the domains page can show real data.
-- QStash can't reach `localhost`. To try a full send locally, run the QStash dev server (`npx @upstash/qstash-cli dev`) and use the URL, token and signing keys it prints.
+- To test campaign sending locally, configure the same `JOB_WORKER_SECRET` on web and worker, then run `npm run worker` alongside the app. Keep sending off until an explicitly approved inbox test is ready.
 - `npm test` runs the unit tests and `npm run lint` runs ESLint.
 
 ## Deliverability basics
@@ -201,8 +203,8 @@ A local MongoDB works: `docker run -d -p 27017:27017 mongo` and `MONGODB_URI=mon
 | `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` | To send | IAM user keys |
 | `SES_CONFIGURATION_SET` | To send | Configuration set that publishes events to SNS |
 | `SES_SNS_TOPIC_ARN` | To send | SNS topic Mailcheap accepts at `/api/webhooks/ses` |
-| `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | To send campaigns | Background sending and scheduling |
-| `QSTASH_URL` | No | QStash region other than the default, or a local QStash dev server |
+| `JOB_WORKER_SECRET` | To send campaigns | Shared random secret for signed, leased worker requests, 32+ characters |
+| `JOB_APP_URL` | Worker | Private web origin, default `http://127.0.0.1:3000` |
 | `SEND_RATE_PER_SECOND` | No | Emails per second, 1 to 14 (default 10). Use 6 on a free Atlas cluster. |
 | `ARCHIVE_HOSTS` | No | Archive domains, like `news.example.com=weekly,letters.example.org=monthly` |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | No | Shared rate limits |
@@ -236,7 +238,7 @@ curl -X POST https://<your-app>/api/v1/contacts \
 ## How it works
 
 - Next.js App Router, JavaScript, Tailwind CSS with shadcn/ui, MongoDB through Mongoose.
-- **Send** picks the audience (active contacts, suppressions left out, most engaged first), creates one message per reader, and queues one QStash job per batch of 50. Each job sends through the SES v2 API at `SEND_RATE_PER_SECOND` and pauses the campaign if bounce or complaint rates pass the limits.
+- **Send** picks the audience (active contacts, suppressions left out, most engaged first), creates one message per reader, and persists one campaign job in MongoDB. The worker processes batches of 50 through the web process at `SEND_RATE_PER_SECOND`, preserving campaign pause and suppression checks.
 - Welcome and confirmation emails go out right away, capped at 100 every 10 minutes per newsletter.
 - SES publishes events to SNS, which posts them to `/api/webhooks/ses`. Mailcheap verifies the SNS signature, updates the message, the campaign stats and the contact, and suppresses bounced and complaining addresses for every newsletter.
 - Opens and clicks go through `/o/...` and `/c/...` on your app's domain. Clicks within 30 seconds of the send, or from known link scanners, don't count.

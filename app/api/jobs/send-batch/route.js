@@ -1,33 +1,21 @@
 import { NextResponse } from "next/server";
 import { isSendingEnabled } from "@/lib/config";
-import { withQStashSignature } from "@/lib/qstash-route";
-import { sendMessageBatch } from "@/lib/sending";
-import { MAX_BATCH_MESSAGES } from "@/lib/sending-rules";
+import { withJobSignature } from "@/lib/job-route";
+import { sendQueuedCampaignBatch } from "@/lib/sending";
 import { isObjectIdString } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function handleBatch(request) {
+async function handleBatch(body) {
 	if (!isSendingEnabled()) return NextResponse.json({ error: "Sending is off" }, { status: 409 });
 
-	const body = await request.json().catch(() => null);
-	const messageIds = body?.messageIds;
-	const isValid =
-		Array.isArray(messageIds) &&
-		messageIds.length > 0 &&
-		messageIds.length <= MAX_BATCH_MESSAGES &&
-		messageIds.every(isObjectIdString);
-	if (!isValid) {
-		return NextResponse.json(
-			{ error: `messageIds must be 1 to ${MAX_BATCH_MESSAGES} message ids` },
-			{ status: 400 }
-		);
+	if (!isObjectIdString(body?.campaignId)) {
+		return NextResponse.json({ error: "Invalid campaign id" }, { status: 400 });
 	}
 
-	const result = await sendMessageBatch(messageIds);
-	// QStash retries non-2xx responses, which is what a throttled batch needs.
-	return NextResponse.json(result, { status: result.retry ? 503 : 200 });
+	const result = await sendQueuedCampaignBatch(body.campaignId);
+	return NextResponse.json(result, { status: result.retry ? 503 : result.pending ? 202 : 200 });
 }
 
-export const POST = withQStashSignature(handleBatch);
+export const POST = withJobSignature("campaign", handleBatch);
