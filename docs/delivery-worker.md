@@ -10,7 +10,7 @@ read_when:
 
 This fork replaces QStash with a persistent Node process and the existing MongoDB database. Run one
 web instance and one worker. The web process owns rendering, subscription checks and SES delivery;
-the worker owns job leases and calls two fixed internal HTTP routes. No SES keys, administrator
+the worker owns job leases and calls three fixed internal HTTP routes. Confirmation intents share this worker. See [signup delivery](signup-delivery.md). No SES keys, administrator
 password or session secret are needed in the worker environment.
 
 ## Configuration
@@ -22,7 +22,7 @@ such as `http://mailcheap:3000`. It follows no redirects. Keep MongoDB and the w
 
 After building the web app, run `npm start` and `npm run worker` as separately supervised processes.
 For development the same worker can call `next dev` on localhost. Job authentication is required in
-development too. Set `SENDING_ENABLED=false` on both processes to stop intake/sending while preserving
+development too. Set `SENDING_ENABLED=false` on both processes to stop delivery while preserving
 queued work; recreate both processes when changing the environment. Confirm their health before
 enabling any campaign. A worker health check succeeds while sending is intentionally off.
 
@@ -39,7 +39,7 @@ enabling any campaign. A worker health check succeeds while sending is intention
   lease can be reclaimed after five minutes. A stale owner cannot renew or acknowledge the new lease.
 - Startup and minute-by-minute reconciliation queue missing jobs for `sending` and `scheduled`
   campaigns. This repairs a crash between a campaign state write and enqueue on standalone MongoDB.
-  Draft/paused campaigns remain idle. Retrying the same job never reselects the campaign's audience.
+  The same pass restores missing confirmation jobs from Contact intents. Draft/paused campaigns remain idle. Retrying the same job never reselects the campaign's audience.
 - HTTP 202 continues the next batch without using the retry budget. HTTP 409 defers for one minute
   while sending is off. Network errors, throttling and server errors retry with exponential backoff
   and jitter; eight consecutive failures stop the job. Other client errors stop it immediately.
@@ -47,8 +47,8 @@ enabling any campaign. A worker health check succeeds while sending is intention
 - Completed jobs expire after seven days. Pending and stopped jobs have no TTL. A later explicit
   campaign resume/extension reactivates its completed job. Payloads contain ids/times only.
 
-The job transport is retryable; email delivery retains upstream's **at-most-once claim**. Mailcheap
-marks a message `sent` before calling SES. A web-process crash in that gap can leave an uncertain
+The job transport is retryable; email delivery uses a journalled **at-most-once claim**. Mailcheap
+marks a message `sent` before calling SES with one SDK attempt. A web-process crash in that gap can leave an uncertain
 message, while retrying a lost HTTP response skips already claimed messages. Never automatically
 requeue these uncertain rows: SES may already have accepted the email. The worker marks itself
 unhealthy when `sent` rows have neither `sentAt` nor `sesMessageId` after 15 minutes. Reconcile them

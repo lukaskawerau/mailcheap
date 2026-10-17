@@ -5,7 +5,7 @@ import { connectDb } from "../lib/db.js";
 import { assertJobSecret } from "../lib/jobs/auth.js";
 import { dispatchJob } from "../lib/jobs/dispatch.js";
 import { createJobQueue, JOB_COLLECTION } from "../lib/jobs/queue.js";
-import { reconcileCampaignJobs } from "../lib/jobs/reconcile.js";
+import { reconcileCampaignJobs, reconcileConfirmationJobs } from "../lib/jobs/reconcile.js";
 
 const HEALTH_FILE = "/tmp/mailcheap-worker-health.json";
 const command = process.argv[2] || "work";
@@ -53,6 +53,7 @@ async function main() {
 		try {
 			if (Date.now() >= nextReview) {
 				await reconcileCampaignJobs(db.collection("campaigns"), queue);
+				await reconcileConfirmationJobs(db.collection("contacts"), queue);
 				const state = await status();
 				snapshot = { connected: true, dead: state.jobs.dead || 0, uncertain: state.uncertain };
 				if (snapshot.dead || snapshot.uncertain) console.error(JSON.stringify({ worker: "needs-attention", ...snapshot }));

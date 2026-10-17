@@ -217,6 +217,10 @@ A local MongoDB works: `docker run -d -p 27017:27017 mongo` and `MONGODB_URI=mon
 
 Create a key on the **API keys** page and send it as `Authorization: Bearer <key>`.
 
+For a durable consent handoff, use [signup requests](docs/signup-delivery.md). That endpoint preserves
+request identity, enforces confirmation and recovers pending delivery. The generic contacts API below
+cannot reactivate contacts that have entered this managed protocol.
+
 **Add a contact**: `POST /api/v1/contacts`
 
 ```bash

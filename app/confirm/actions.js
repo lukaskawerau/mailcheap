@@ -16,7 +16,7 @@ export async function confirmSubscription(token) {
 	const { contact, confirmed } = await confirmContact(reference);
 	if (contact?.status !== "active") return { error: "invalid" };
 
-	if (confirmed && isSendingEnabled()) {
+	if (confirmed && !contact.signupManaged && isSendingEnabled()) {
 		const newsletter = await Newsletter.findById(reference.newsletterId).lean();
 		// Skipped while the newsletter confirms signups: the confirmation was their one email.
 		after(() =>

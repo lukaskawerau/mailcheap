@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
+import { withdrawContact } from "@/lib/contacts";
 import { connectDb } from "@/lib/db";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 import Campaign from "@/models/Campaign";
-import Contact from "@/models/Contact";
 import Message from "@/models/Message";
 
 const NO_STORE = { "Cache-Control": "no-store" };
-// Bounced and complained contacts stay as they are: those statuses also block sending.
-const SUBSCRIBED_STATUSES = ["active", "dormant"];
 const RECENT_CAMPAIGNS = 5;
 // Gmail and Yahoo send one-click requests from shared mail servers, so keep this generous.
 const RATE_LIMIT = { name: "unsubscribe", limit: 60, window: "1 m" };
@@ -35,13 +33,8 @@ async function creditLatestCampaign({ contactId, newsletterId }) {
 
 async function unsubscribe({ contactId, newsletterId }) {
 	await connectDb();
-	const previous = await Contact.findOneAndUpdate(
-		{ _id: contactId, newsletterId, status: { $in: SUBSCRIBED_STATUSES } },
-		{ $set: { status: "unsubscribed", unsubscribedAt: new Date() } }
-	)
-		.select({ _id: 1 })
-		.lean();
-	if (!previous) return;
+	const previous = await withdrawContact({ contactId, newsletterId });
+	if (!previous || previous.status === "unsubscribed") return;
 
 	console.log(`[unsubscribe] Contact ${contactId} unsubscribed from newsletter ${newsletterId}`);
 	await creditLatestCampaign({ contactId, newsletterId }).catch((error) =>

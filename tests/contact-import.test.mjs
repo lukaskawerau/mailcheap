@@ -26,19 +26,19 @@ test("rows add the contacts a newsletter doesn't have and only make statuses str
 	assert.ok(writes[1].updateOne.update.$setOnInsert.unsubscribedAt instanceof Date);
 
 	assert.deepEqual(getStatusChanges(contacts), [
-		{ status: "unsubscribed", emails: ["left@example.com", "left-too@example.com"], replaces: ["active", "dormant"] },
+		{ status: "unsubscribed", emails: ["left@example.com", "left-too@example.com"], replaces: ["active", "dormant", "pending", "unsubscribed"] },
 		{ status: "bounced", emails: ["bounced@example.com"], replaces: ["active", "dormant", "unsubscribed"] },
 		{ status: "dormant", emails: ["cold@example.com"], replaces: ["active"] },
 	]);
 });
 
-test("existing contacts never become active and contacts waiting to confirm stay as they are", () => {
+test("imports cannot activate contacts and explicit opt-out cancels pending confirmation", () => {
 	const writes = getContactWrites({ newsletterId, contacts, source: "import" });
 	for (const { updateOne } of writes) {
 		assert.ok(Object.keys(updateOne.update.$set ?? {}).every((key) => key.startsWith("imported.")));
 	}
 	for (const { status, replaces } of getStatusChanges(contacts)) {
 		assert.notEqual(status, "active");
-		assert.equal(replaces.includes("pending"), false);
+		assert.equal(replaces.includes("pending"), status === "unsubscribed");
 	}
 });

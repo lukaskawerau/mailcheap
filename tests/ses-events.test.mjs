@@ -68,7 +68,7 @@ test("hard bounces suppress the bounced address and mark contacts bounced", () =
 		reason: "bounce",
 		detail: "Permanent/General",
 		contactStatus: "bounced",
-		contactStatusFrom: ["active", "dormant", "unsubscribed"],
+		contactStatusFrom: ["active", "dormant", "unsubscribed", "pending"],
 	});
 	assert.equal(plan.error, "Hard bounce: General, smtp; 550 5.1.1 unknown");
 });

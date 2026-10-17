@@ -11,6 +11,9 @@ const contactSchema = new mongoose.Schema(
 		source: { type: String, trim: true },
 		subscribedAt: { type: Date, default: Date.now },
 		confirmedAt: { type: Date },
+			signupManaged: { type: Boolean },
+			signup: { requestId: String, consentedAt: Date },
+			confirmation: { generation: String, requestId: String, messageId: mongoose.Schema.Types.ObjectId, state: String, availableAt: Date },
 		unsubscribedAt: { type: Date },
 		lastSentAt: { type: Date },
 		lastOpenAt: { type: Date },
@@ -38,6 +41,7 @@ const contactSchema = new mongoose.Schema(
 contactSchema.index({ newsletterId: 1, email: 1 }, { unique: true });
 contactSchema.index({ newsletterId: 1, status: 1, createdAt: -1 });
 contactSchema.index({ email: 1 });
+contactSchema.index({ status: 1, "confirmation.state": 1, "confirmation.availableAt": 1 });
 // The contacts list shows the newest subscribers first, with or without newsletter and status filters.
 // It breaks ties by _id, which the index needs too: without it MongoDB sorts the whole list on every page.
 contactSchema.index({ subscribedAt: -1, _id: -1 });

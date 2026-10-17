@@ -4,6 +4,7 @@ import { isValidObjectId } from "mongoose";
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
 import { withEngagement } from "@/lib/cleanup";
+import { withdrawContact } from "@/lib/contacts";
 import { importContactRows } from "@/lib/contact-import";
 import { MAX_IMPORT_ROWS_PER_REQUEST } from "@/lib/csv-import";
 import { connectDb } from "@/lib/db";
@@ -32,14 +33,13 @@ export async function setContactStatus(id, status) {
 
 	// Reactivation only applies to dormant contacts; unsubscribes, bounces and complaints are final. It
 	// starts the list cleanup over, or the next send would make them dormant again.
-	const filter =
-		status === "active"
-			? { _id: id, status: "dormant" }
-			: { _id: id, status: { $in: ["active", "dormant", "pending"] } };
-	const update =
-		status === "active"
-			? withEngagement({ $set: { status } })
-			: { $set: { status, unsubscribedAt: new Date() } };
+	if (status === "unsubscribed") {
+		const previous = await withdrawContact({ contactId: id });
+		revalidatePath("/contacts");
+		return previous ? { ok: true } : { error: "Status cannot change" };
+	}
+	const filter = { _id: id, status: "dormant" };
+	const update = withEngagement({ $set: { status } });
 	const { modifiedCount } = await Contact.updateOne(filter, update);
 
 	revalidatePath("/contacts");

@@ -20,6 +20,9 @@ const messageSchema = new mongoose.Schema(
 		provider: { type: String },
 		status: { type: String, enum: MESSAGE_STATUSES, default: "queued" },
 		sesMessageId: { type: String },
+			confirmationRequestId: { type: String },
+			confirmationGeneration: { type: String },
+			attemptedAt: Date,
 		error: { type: String },
 		sentAt: Date,
 		deliveredAt: Date,
@@ -41,6 +44,10 @@ messageSchema.index(
 	{ campaignId: 1, contactId: 1, kind: 1 },
 	{ unique: true, partialFilterExpression: { kind: "last-chance" } }
 );
+messageSchema.index({ contactId: 1, confirmationRequestId: 1 }, { unique: true, partialFilterExpression: { kind: "confirmation", confirmationRequestId: { $type: "string" } } });
+messageSchema.index({ kind: 1, contactId: 1, attemptedAt: -1 });
+messageSchema.index({ contactId: 1 });
+messageSchema.index({ newsletterId: 1, kind: 1, attemptedAt: -1 });
 messageSchema.index({ sesMessageId: 1 }, { sparse: true });
 messageSchema.index({ kind: 1, createdAt: -1 });
 // The overview's emails sent per hour.
