@@ -9,7 +9,8 @@ import { firstImageUrl } from "../lib/thumbnail.js";
 // Bodies as large as the API and the editor accept. Before, the first two took 6 s at 192 KB and 12 s
 // at 384 KB, and some Markdown shapes took minutes.
 const SIZE = 500_000;
-const MAX_MS = 200;
+// Catch the old multi-second quadratic paths while allowing for hosted-runner CPU speeds.
+const MAX_MS = 1000;
 // marked stops after a second on the shapes it's quadratic on, and 500 KB of Markdown can become 2 MB
 // of HTML to sanitize.
 const MAX_MARKDOWN_MS = 2000;
